@@ -6,72 +6,17 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema
 } from '@modelcontextprotocol/sdk/types.js';
-import { StrKey, xdr, Keypair } from 'stellar-sdk';
 
-const RPC_TESTNET_URL = 'https://soroban-testnet.stellar.org';
+// Import the CLI module
+import { CLIModule } from './modules/cli/index.js';
 
-interface RPCError {
-  code?: number;
-  message?: string;
-  data?: any;
-}
+// RPC Module kept but not imported - for future use
+// import { RPCModule } from './modules/rpc/index.js';
 
-interface RPCResponse {
-  jsonrpc: string;
-  id: number | string;
-  result?: any;
-  error?: RPCError;
-}
-
-async function callRPC(method: string, params?: any): Promise<any> {
-  const requestBody = {
-    jsonrpc: '2.0',
-    id: Date.now(),
-    method,
-    params: params || {}
-  };
-  
-  try {
-    const response = await fetch(RPC_TESTNET_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody)
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    
-    const data = await response.json() as RPCResponse;
-    
-    if (data.error) {
-      throw new Error(data.error.message || `RPC Error ${data.error.code}`);
-    }
-    
-    return data.result;
-  } catch (error) {
-    if (error instanceof Error) {
-      throw error;
-    }
-    throw new Error(`Failed to call RPC: ${String(error)}`);
-  }
-}
-
-function accountIdToLedgerKey(accountId: string): string {
-  try {
-    const accountIdBuffer = StrKey.decodeEd25519PublicKey(accountId);
-    const accountKey = xdr.LedgerKey.account(
-      new xdr.LedgerKeyAccount({
-        accountId: xdr.PublicKey.publicKeyTypeEd25519(accountIdBuffer),
-      })
-    );
-    return accountKey.toXDR('base64');
-  } catch (error) {
-    throw new Error(`Invalid account ID: ${accountId}`);
-  }
-}
+// Future module imports
+// import { HorizonModule } from './modules/horizon/index.js';
+// import { SDKModule } from './modules/sdk/index.js';
+// import { DocsModule } from './modules/docs/index.js';
 
 const server = new Server(
   {
@@ -81,264 +26,54 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      // resources: {}, // For future resource support
+      // prompts: {},   // For future prompt templates
     },
   }
 );
 
-const TOOLS = [
-  {
-    name: 'getLatestLedger',
-    description: 'Get information about the latest ledger',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
-  {
-    name: 'getTransaction',
-    description: 'Get details about a specific transaction by hash',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        hash: {
-          type: 'string',
-          description: 'The transaction hash',
-        },
-      },
-      required: ['hash'],
-    },
-  },
-  {
-    name: 'getTransactions',
-    description: 'Get a list of recent transactions',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        startLedger: {
-          type: 'number',
-          description: 'The ledger sequence to start from',
-        },
-        limit: {
-          type: 'number',
-          description: 'Number of transactions to return (default: 10)',
-          default: 10,
-        },
-      },
-      required: ['startLedger'],
-    },
-  },
-  {
-    name: 'getLedgerEntry',
-    description: 'Get ledger entry data for an account',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        accountId: {
-          type: 'string',
-          description: 'The Stellar account public key',
-        },
-      },
-      required: ['accountId'],
-    },
-  },
-  {
-    name: 'getFeeStats',
-    description: 'Get current network fee statistics',
-    inputSchema: {
-      type: 'object',
-      properties: {},
-    },
-  },
+// Aggregate all tools from active modules
+const ALL_TOOLS = [
+  ...CLIModule.tools,
+  // Future modules will add their tools here
+  // ...RPCModule.tools,
+  // ...HorizonModule.tools,
+  // ...SDKModule.tools,
+  // ...DocsModule.tools,
 ];
 
+// Aggregate all handlers from active modules
+const ALL_HANDLERS = {
+  ...CLIModule.handlers,
+  // Future modules will add their handlers here
+  // ...RPCModule.handlers,
+  // ...HorizonModule.handlers,
+  // ...SDKModule.handlers,
+  // ...DocsModule.handlers,
+};
+
+// Handle tool listing requests
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
-    tools: TOOLS,
+    tools: ALL_TOOLS,
   };
 });
 
+// Handle tool execution requests
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   
   try {
-    switch (name) {
-      case 'getLatestLedger': {
-        const result = await callRPC('getLatestLedger');
-        
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                id: result.id,
-                protocolVersion: result.protocolVersion,
-                sequence: result.sequence,
-                hash: result.hash,
-              }, null, 2),
-            },
-          ],
-        };
-      }
-      
-      case 'getTransaction': {
-        const { hash } = args as { hash: string };
-        const result = await callRPC('getTransaction', { hash });
-        
-        if (!result) {
-          throw new Error('Transaction not found');
-        }
-        
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                status: result.status,
-                latestLedger: result.latestLedger,
-                latestLedgerCloseTime: result.latestLedgerCloseTime,
-                oldestLedger: result.oldestLedger,
-                oldestLedgerCloseTime: result.oldestLedgerCloseTime,
-                applicationOrder: result.applicationOrder,
-                envelopeXdr: result.envelopeXdr,
-                resultXdr: result.resultXdr,
-                resultMetaXdr: result.resultMetaXdr,
-                ledger: result.ledger,
-                createdAt: result.createdAt,
-              }, null, 2),
-            },
-          ],
-        };
-      }
-      
-      case 'getTransactions': {
-        const { startLedger, limit = 10 } = args as { startLedger: number; limit?: number };
-        const result = await callRPC('getTransactions', {
-          startLedger,
-          pagination: {
-            limit
-          }
-        });
-        
-        const transactions = result.transactions || [];
-        
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                latestLedger: result.latestLedger,
-                latestLedgerCloseTimestamp: result.latestLedgerCloseTimestamp,
-                oldestLedger: result.oldestLedger,
-                oldestLedgerCloseTimestamp: result.oldestLedgerCloseTimestamp,
-                cursor: result.cursor,
-                transactionCount: transactions.length,
-                transactions: transactions.map((tx: any) => ({
-                  status: tx.status,
-                  hash: tx.hash,
-                  ledger: tx.ledger,
-                  createdAt: tx.createdAt,
-                  applicationOrder: tx.applicationOrder,
-                  feeBump: tx.feeBump,
-                  envelopeXdr: tx.envelopeXdr,
-                  resultXdr: tx.resultXdr,
-                  resultMetaXdr: tx.resultMetaXdr,
-                })),
-              }, null, 2),
-            },
-          ],
-        };
-      }
-      
-      case 'getLedgerEntry': {
-        const { accountId } = args as { accountId: string };
-        
-        let ledgerKey: string;
-        try {
-          ledgerKey = accountIdToLedgerKey(accountId);
-        } catch (error) {
-          throw new Error(`Invalid account ID: ${error instanceof Error ? error.message : String(error)}`);
-        }
-        
-        const result = await callRPC('getLedgerEntries', {
-          keys: [ledgerKey]
-        });
-        
-        if (!result.entries || result.entries.length === 0) {
-          throw new Error('Account not found');
-        }
-        
-        const entry = result.entries[0];
-        
-        let accountData: any = {};
-        try {
-          const ledgerEntryData = xdr.LedgerEntryData.fromXDR(entry.xdr, 'base64');
-          if (ledgerEntryData.switch().name === 'account') {
-            const account = ledgerEntryData.account();
-            accountData = {
-              accountId: StrKey.encodeEd25519PublicKey(account.accountId().ed25519()),
-              balance: account.balance().toString(),
-              sequenceNumber: account.seqNum().toString(),
-              numSubEntries: account.numSubEntries(),
-              inflationDest: account.inflationDest() ? 
-                StrKey.encodeEd25519PublicKey(account.inflationDest()!.ed25519()) : null,
-              flags: account.flags(),
-              homeDomain: account.homeDomain().toString(),
-              thresholds: {
-                masterWeight: account.thresholds()[0],
-                low: account.thresholds()[1],
-                medium: account.thresholds()[2],
-                high: account.thresholds()[3],
-              },
-              signers: account.signers().map((signer: any) => ({
-                key: signer.key().ed25519() ? 
-                  StrKey.encodeEd25519PublicKey(signer.key().ed25519()) : 
-                  signer.key().toString(),
-                weight: signer.weight(),
-              })),
-            };
-          }
-        } catch (error) {
-          accountData = {
-            rawXdr: entry.xdr,
-            parseError: 'Could not parse account data from XDR',
-          };
-        }
-        
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                lastModifiedLedgerSeq: entry.lastModifiedLedgerSeq,
-                key: entry.key,
-                account: accountData,
-                latestLedger: result.latestLedger,
-              }, null, 2),
-            },
-          ],
-        };
-      }
-      
-      case 'getFeeStats': {
-        const result = await callRPC('getFeeStats');
-        
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({
-                sorobanInclusionFee: result.sorobanInclusionFee,
-                inclusionFee: result.inclusionFee,
-                latestLedger: result.latestLedger,
-              }, null, 2),
-            },
-          ],
-        };
-      }
-      
-      default:
-        throw new Error(`Unknown tool: ${name}`);
+    // Find the appropriate handler for the tool
+    const handler = ALL_HANDLERS[name];
+    
+    if (!handler) {
+      throw new Error(`Unknown tool: ${name}`);
     }
+    
+    // Execute the handler and return the result
+    return await handler(args);
+    
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     return {
@@ -356,7 +91,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('StellarPilot MCP server (RPC version) running on stdio');
+  
+  // Log startup message
+  console.error('🚀 StellarPilot MCP Server v2.0.0');
+  console.error('🛠️  CLI Module Active - Stellar Commands Available');
+  console.error(`📋 ${ALL_TOOLS.length} tools loaded and ready`);
+  console.error('-------------------------------------------');
+  console.error('Available operations:');
+  console.error('');
+  console.error('📄 Contract Operations:');
+  console.error('  • Deploy contracts (WASM/Asset)');
+  console.error('  • Invoke contract functions');
+  console.error('  • Build & optimize contracts');
+  console.error('  • Generate client bindings');
+  console.error('  • Manage aliases & data');
+  console.error('');
+  console.error('💸 Transaction Operations:');
+  console.error('  • Send payments (XLM & assets)');
+  console.error('  • Create & fund accounts');
+  console.error('  • Manage trustlines');
+  console.error('  • DEX trading operations');
+  console.error('  • Sign, simulate & send transactions');
+  console.error('  • Path payments & account merges');
+  console.error('');
+  console.error('🔑 Identity & Key Management:');
+  console.error('  • Generate new identities');
+  console.error('  • Add existing keys & seed phrases');
+  console.error('  • Fund accounts on testnet');
+  console.error('  • Manage default identity');
+  console.error('  • Secure storage support');
+  console.error('');
+  console.error('🌐 Network Configuration:');
+  console.error('  • Add & configure networks');
+  console.error('  • Check network health & info');
+  console.error('  • Manage default network');
+  console.error('  • Fetch network settings');
+  console.error('  • Support for testnet, mainnet, futurenet');
+  console.error('-------------------------------------------');
+  console.error('Server running on stdio transport');
 }
 
 main().catch((error) => {
