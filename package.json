@@ -1,22 +1,43 @@
 {
   "name": "stellarpilot",
-  "version": "1.0.0",
-  "description": "MCP server for Stellar Horizon testnet endpoints",
+  "version": "1.0.1",
+  "description": "MCP server providing comprehensive access to Stellar blockchain through 73+ CLI tools",
   "main": "build/index.js",
   "type": "module",
+  "files": [
+    "build",
+    "README.md"
+  ],
+  "bin": {
+    "stellar-pilot": "./build/index.js"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node build/index.js",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "mcp",
     "stellar",
     "horizon",
-    "blockchain"
+    "blockchain",
+    "soroban",
+    "model-context-protocol",
+    "cli",
+    "stellar-cli",
+    "smart-contracts"
   ],
-  "author": "",
+  "author": "Tolga Yayci",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tolgayayci/stellarpilot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tolgayayci/stellarpilot/issues"
+  },
+  "homepage": "https://github.com/tolgayayci/stellarpilot#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "stellar-sdk": "^13.0.0"
@@ -24,5 +45,8 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
